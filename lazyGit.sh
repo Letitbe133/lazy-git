@@ -1,8 +1,8 @@
 #! /bin/bash
 
 # Add your Github credentials here
-USER_TOKEN="YOUR_GITHUB_TOKEN"
-GITHUB_USERNAME="YOUR_GITHUB_USERNAME"
+USER_TOKEN="YOUR_PERSONAL_ACCESS_TOKEN_HERE"
+GITHUB_USERNAME="YOUR_GITHUB_USERNAME_HERE"
 
 # color settings
 TEXT_COLOR="\e[96m"
@@ -32,8 +32,14 @@ echo "Give your repo an awesome name !"
 # remove trailing spaces
 # replace spaces with '-'
 # switch to lowercase
-read REPO_NAME_INPUT
-REPO_NAME=$(echo $REPO_NAME_INPUT | sed -e 's/ /-/g' | tr '[:upper:]' '[:lower:]')
+read RAW_REPO_NAME
+REPO_NAME=$(echo $RAW_REPO_NAME | sed -e 's/ /-/g' | tr '[:upper:]' '[:lower:]')
+
+# exit script if repo name is empty and display message to user
+if [ -z "$REPO_NAME" ]; then
+    echo "Repo name cannot be empty"
+    exit 1
+fi
 
 # ask user for repo description
 echo "Tell the world what it's all about !"
@@ -41,8 +47,17 @@ read REPO_DESCRIPTION
 
 # ask user for path to local project
 echo "Where do you want to store your awesome project (e.g Projects) ?"
-read USER_PATH
-BASE_PATH="${HOME}/${USER_PATH}"
+read RAW_PATH
+
+# remove trailing spaces
+USER_PATH=$(echo $RAW_PATH | sed -e 's/ /-/g')
+
+# if no folder specified, defaults to Home
+if [ -z "$USER_PATH" ]; then
+    BASE_PATH="${HOME}"
+else
+    BASE_PATH="${HOME}/${USER_PATH}"
+fi
 
 # check if path is correct
 if [ ! -d "$BASE_PATH" ]; then
@@ -50,7 +65,7 @@ if [ ! -d "$BASE_PATH" ]; then
   exit
 fi
 
-# exit if folder exists exit
+# exit if folder exists exist
 PROJECT_PATH="${BASE_PATH}/${REPO_NAME}"
 if [ -d "$PROJECT_PATH" ]; then
   echo "Folder ${DIR} already exists. Exiting..."
@@ -128,17 +143,28 @@ GITIGNORE
 # add files and commit changes
 echo -e "${TEXT_COLOR}Commiting changes\e[0m"
 git add .
-git commit -m "commit setup with bash script"
+git commit -m "Initial commit using bash script"
 
 # log user in with Github API
-# TODO: add link to resource
 echo -e "${TEXT_COLOR}Creating Github repo\e[0m"
-curl -H "Authorization: token ${USER_TOKEN}" https://api.github.com/user/repos -d "{\"name\":\"${REPO_NAME}\",\"description\":\"${REPO_DESCRIPTION}\"}"
-if [ $? -eq 0 ]; then
-    echo -e "${TEXT_COLOR}Github repo successfully created !\e[0m"
-else
-    echo -e "${TEXT_COLOR_ERROR}Couldn't create Github repo. Sure your credentials are OK ?\e[0m"
-    break
+CURL_RESPONSE_CODE=$(curl -i -H "Authorization: token ${USER_TOKEN}" https://api.github.com/user/repos -d "{\"name\":\"${REPO_NAME}\",\"description\":\"${REPO_DESCRIPTION}\"}" | grep -i -P "http\/\d.?\d?\s\d{3}" | grep -oP "(\d{3})")
+
+# check if curl response status is 200
+if [[ "$CURL_RESPONSE_CODE" == "422" ]]; then
+    echo -e "${TEXT_COLOR_ERROR}A repo with the same name already exists !${TEXT_NORMAL}"
+    echo -e "${TEXT_COLOR_ERROR}Rewinding...${TEXT_NORMAL}"
+    cd "$BASE_PATH"
+    rm -rf "$REPO_NAME"
+    echo -e "${TEXT_COLOR}Project removed successfully !${TEXT_NORMAL}"
+    exit
+
+elif [[ "$CURL_RESPONSE_CODE" != "201" ]]; then
+    echo -e "${TEXT_COLOR_ERROR}Couldn't create Github repo. Check your credentials !${TEXT_NORMAL}"
+    echo -e "${TEXT_COLOR_ERROR}Rewinding...${TEXT_NORMAL}"
+    cd "$BASE_PATH"
+    rm -rf "$REPO_NAME"
+    echo -e "${TEXT_COLOR}Project removed successfully !${TEXT_NORMAL}"
+    exit
 fi
 
 # add remote Github repo to local repo
@@ -152,9 +178,8 @@ if [ $? -eq 0 ]; then
     echo -e "${TEXT_COLOR}Done. Your repo is visible at https://github.com/$GITHUB_USERNAME/$REPO_NAME ${TEXT_NORMAL}"
 else
     echo -e "${TEXT_COLOR_ERROR}Unable to push to remote repo. Rewinding...${TEXT_NORMAL}"
-    cd "$USER_PATH"
+    cd "$BASE_PATH"
     rm -rf "$REPO_NAME"
-    # curl -X DELETE -H 'Authorization: token xxx' https://api.github.com/repos/USERNAME/NAME-OF-REPO
     curl -X DELETE -H "Authorization: token ${USER_TOKEN}" https://api.github.com/repos/$GITHUB_USERNAME/$REPO_NAME
 fi
 
